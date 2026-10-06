@@ -1,13 +1,158 @@
-:root{color-scheme:dark;--bg:#09090b;--panel:#111114;--line:#27272a;--text:#f4f4f5;--muted:#a1a1aa}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-button,input{font:inherit}button{cursor:pointer}.page{min-height:100vh;display:grid;place-items:center;padding:24px}.shell{width:min(760px,100%)}
-.brand{font-size:12px;letter-spacing:.2em;color:var(--muted);margin-bottom:52px}h1{font-size:clamp(42px,8vw,76px);line-height:.98;letter-spacing:-.055em;margin:0}
-.subtitle{color:var(--muted);font-size:18px;line-height:1.6;margin:22px 0 34px;max-width:590px}
-.drop{display:block;border:1px dashed #52525b;border-radius:20px;padding:52px 24px;text-align:center;background:#ffffff03}.drop.drag{border-color:#fff;background:#ffffff0a}
-.meta,.status,.small{color:var(--muted);font-size:13px}.meta{margin-top:7px}.panel{border:1px solid var(--line);border-radius:16px;margin-top:18px;overflow:hidden}
-.file{display:flex;justify-content:space-between;gap:16px;padding:14px 16px;border-bottom:1px solid var(--line)}.file:last-child{border-bottom:0}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}.primary,.secondary{border-radius:12px;padding:12px 16px;font-weight:650}
-.primary{background:#fafafa;color:#09090b;border:0}.secondary{background:transparent;color:var(--text);border:1px solid var(--line)}
-.qr{display:grid;justify-items:center;gap:12px;background:white;color:#111;border-radius:14px;padding:20px;width:max-content;max-width:100%;margin:20px auto}.code{font:600 18px ui-monospace,monospace;letter-spacing:.12em}
-.progress{height:8px;background:#27272a;border-radius:99px;overflow:hidden;margin:18px 0 10px}.progress>div{height:100%;background:#fafafa}
-.error{border:1px solid #7f1d1d;background:#7f1d1d22;color:#fecaca;padding:14px;border-radius:12px;margin-top:16px}.small{line-height:1.6;margin-top:24px}
+:root {
+  color-scheme: dark;
+  --bg: #09090b;
+  --panel: #111114;
+  --line: #27272a;
+  --text: #f4f4f5;
+  --muted: #a1a1aa;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+button,
+input {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.shell {
+  width: min(760px, 100%);
+}
+.brand {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-bottom: 52px;
+}
+h1 {
+  font-size: clamp(42px, 8vw, 76px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  margin: 0;
+}
+.subtitle {
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 22px 0 34px;
+  max-width: 590px;
+}
+.drop {
+  display: block;
+  border: 1px dashed #52525b;
+  border-radius: 20px;
+  padding: 52px 24px;
+  text-align: center;
+  background: #ffffff03;
+}
+.drop.drag {
+  border-color: #fff;
+  background: #ffffff0a;
+}
+.meta,
+.status,
+.small {
+  color: var(--muted);
+  font-size: 13px;
+}
+.meta {
+  margin-top: 7px;
+}
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  margin-top: 18px;
+  overflow: hidden;
+}
+.file {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.file:last-child {
+  border-bottom: 0;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+.primary,
+.secondary {
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-weight: 650;
+}
+.primary {
+  background: #fafafa;
+  color: #09090b;
+  border: 0;
+}
+.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.qr {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  background: white;
+  color: #111;
+  border-radius: 14px;
+  padding: 20px;
+  width: max-content;
+  max-width: 100%;
+  margin: 20px auto;
+}
+.code {
+  font:
+    600 18px ui-monospace,
+    monospace;
+  letter-spacing: 0.12em;
+}
+.progress {
+  height: 8px;
+  background: #27272a;
+  border-radius: 99px;
+  overflow: hidden;
+  margin: 18px 0 10px;
+}
+.progress > div {
+  height: 100%;
+  background: #fafafa;
+}
+.error {
+  border: 1px solid #7f1d1d;
+  background: #7f1d1d22;
+  color: #fecaca;
+  padding: 14px;
+  border-radius: 12px;
+  margin-top: 16px;
+}
+.small {
+  line-height: 1.6;
+  margin-top: 24px;
+}

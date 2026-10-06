@@ -11,6 +11,7 @@ const HIGH_WATER = 2 * 1024 * 1024;
 const LOW_WATER = 512 * 1024;
 const SIGNAL_URL = process.env.NEXT_PUBLIC_SIGNALING_URL || "ws://localhost:8787";
 
+
 type Role = "sender" | "receiver";
 type Msg = { type: string; [key: string]: unknown };
 type RxFile = {
