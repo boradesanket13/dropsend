@@ -1,0 +1,44 @@
+name: Deploy Signaling
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "signaling/**"
+      - ".github/workflows/deploy-signaling.yml"
+
+concurrency:
+  group: deploy-signaling
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy dropsend-signaling
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: signaling
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: signaling/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Deploy to Cloudflare
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

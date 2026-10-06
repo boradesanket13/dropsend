@@ -1,22 +1,59 @@
 name: CI
-on: [push, pull_request]
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
 jobs:
   frontend:
+    name: Frontend
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: web}}
+    defaults:
+      run:
+        working-directory: web
+
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with: {node-version: 24, cache: npm, cache-dependency-path: web/package-lock.json}
-      - run: npm install
-      - run: npm run typecheck
-      - run: npm run build
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build OpenNext
+        run: npx @opennextjs/cloudflare build
+
   signaling:
+    name: Signaling
     runs-on: ubuntu-latest
-    defaults: {run: {working-directory: signaling}}
+    defaults:
+      run:
+        working-directory: signaling
+
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
-        with: {node-version: 24, cache: npm, cache-dependency-path: signaling/package-lock.json}
-      - run: npm install
-      - run: npm run typecheck
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: signaling/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
