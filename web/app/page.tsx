@@ -23,7 +23,8 @@ const LOW_WATER = 512 * 1024;
 const CONNECTION_TIMEOUT = 30_000;
 
 const SIGNAL_URL =
-  process.env.NEXT_PUBLIC_SIGNALING_URL || "ws://localhost:8787";
+  process.env.NEXT_PUBLIC_SIGNALING_URL ||
+  "wss://dropsend-signaling.dropsend.workers.dev";
 
 type Role = "sender" | "receiver";
 
