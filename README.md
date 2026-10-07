@@ -277,6 +277,4 @@ Native file-saving APIs vary by browser. Where browser capabilities differ, Drop
 
 ## License
 
-This repository does not currently declare an open-source license.
-
-Until a license is added, the source code should not be assumed to be available for unrestricted reuse, modification, or redistribution.
+- MIT License
