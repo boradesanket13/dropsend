@@ -22,3 +22,6 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Dev Notes
+notes/
