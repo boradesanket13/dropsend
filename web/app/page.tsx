@@ -331,7 +331,19 @@ export default function Home() {
     const pc = createPeer();
 
     pcRef.current = pc;
+    console.log("[WebRTC] SENDER peer created");
 
+    pc.oniceconnectionstatechange = () => {
+      console.log("[WebRTC] SENDER ICE:", pc.iceConnectionState);
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log("[WebRTC] SENDER CONNECTION:", pc.connectionState);
+    };
+
+    pc.onsignalingstatechange = () => {
+      console.log("[WebRTC] SENDER SIGNALING:", pc.signalingState);
+    };
     const dc = pc.createDataChannel("dropsend-v1", {
       ordered: true,
     });
@@ -367,7 +379,19 @@ export default function Home() {
     const pc = createPeer();
 
     pcRef.current = pc;
+    console.log("[WebRTC] RECEIVER peer created");
 
+    pc.oniceconnectionstatechange = () => {
+      console.log("[WebRTC] RECEIVER ICE:", pc.iceConnectionState);
+    };
+
+    pc.onconnectionstatechange = () => {
+      console.log("[WebRTC] RECEIVER CONNECTION:", pc.connectionState);
+    };
+
+    pc.onsignalingstatechange = () => {
+      console.log("[WebRTC] RECEIVER SIGNALING:", pc.signalingState);
+    };
     pc.ondatachannel = (e) => {
       setupChannel(e.channel);
     };
@@ -391,6 +415,7 @@ export default function Home() {
   async function handleSignal(
     data: RTCSessionDescriptionInit | RTCIceCandidateInit,
   ) {
+    console.log("[WebRTC] RECEIVED SIGNAL:", data);
     const pc = pcRef.current;
 
     if (!pc) {
