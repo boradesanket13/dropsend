@@ -23,6 +23,8 @@ const LOW_WATER = 512 * 1024;
 
 const CONNECTION_TIMEOUT = 30_000;
 
+const MEMORY_FALLBACK_LIMIT = 256 * 1024 * 1024;
+
 const SIGNAL_URL =
   process.env.NEXT_PUBLIC_SIGNALING_URL ||
   "wss://dropsend-signaling.dropsend.workers.dev";
@@ -49,8 +51,10 @@ type RxFile = {
   nextIndex: number;
   expectedHash?: string;
   hash: IncrementalHash;
-  opfsHandle: FileSystemFileHandle;
-  writable: FileSystemWritableFileStream;
+  storage: "opfs" | "memory";
+  opfsHandle?: FileSystemFileHandle;
+  writable?: FileSystemWritableFileStream;
+  chunks: Uint8Array[];
 };
 
 type ReceivedFile = {
@@ -58,7 +62,9 @@ type ReceivedFile = {
   name: string;
   size: number;
   mime: string;
-  handle: FileSystemFileHandle;
+  storage: "opfs" | "memory";
+  handle?: FileSystemFileHandle;
+  blob?: Blob;
 };
 
 function bytesToHex(bytes: Uint8Array): string {
@@ -66,8 +72,28 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function safeStorageName(name: string): string {
-  const cleaned = name.replace(/[\\/\\0]/g, "_").trim() || "file";
-  return cleaned.slice(0, 180);
+  const cleaned = name
+    .replace(/[\/\0]/g, "_")
+    .replace(/[<>:"|?*]/g, "_")
+    .replace(/[\u0000-\u001f]/g, "_")
+    .trim();
+
+  return (cleaned || "file").slice(0, 180);
+}
+
+function hasOpfs(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    typeof navigator.storage?.getDirectory === "function"
+  );
+}
+
+function hasWebRtcSupport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.RTCPeerConnection === "function" &&
+    typeof window.RTCDataChannel !== "undefined"
+  );
 }
 
 export default function Home() {
@@ -103,6 +129,18 @@ export default function Home() {
   const receivedFilesRef = useRef<ReceivedFile[]>([]);
 
   useEffect(() => {
+    if (!hasWebRtcSupport()) {
+      setError(
+        "WebRTC DataChannel is not available in this browser. " +
+          "Use a current Chrome, Edge, Firefox, Safari, or compatible mobile browser.",
+      );
+      setStatus("Browser not supported.");
+    } else if (!hasOpfs()) {
+      setStatus(
+        "Ready. This browser will use a compatibility receive path for saved files.",
+      );
+    }
+
     const params = new URLSearchParams(location.hash.slice(1));
 
     const r = params.get("room");
@@ -254,6 +292,14 @@ export default function Home() {
       return;
     }
 
+    if (!hasWebRtcSupport()) {
+      setError(
+        "This browser does not support WebRTC DataChannel. " +
+          "Use a current version of Chrome, Edge, Firefox, Safari, or a compatible mobile browser.",
+      );
+      return;
+    }
+
     const r = newRoomId();
     const k = newSecret();
 
@@ -284,6 +330,13 @@ export default function Home() {
 
   async function joinReceiver(r: string, k: string) {
     try {
+      if (!hasWebRtcSupport()) {
+        throw new Error(
+          "This browser does not support WebRTC DataChannel. " +
+            "Use a current version of Chrome, Edge, Firefox, Safari, or a compatible mobile browser.",
+        );
+      }
+
       keyRef.current = await importSecret(k);
 
       setStatus("Connecting to sender…");
@@ -351,7 +404,7 @@ export default function Home() {
         }
       }
     } catch {
-      // Connection diagnostics are informational only.
+      
     }
   }
 
@@ -634,7 +687,21 @@ export default function Home() {
   }
 
   async function saveReceivedFile(received: ReceivedFile) {
-    const source = await received.handle.getFile();
+    let source: File | Blob;
+
+    if (received.storage === "opfs") {
+      if (!received.handle) {
+        throw new Error("Received file storage is unavailable.");
+      }
+
+      source = await received.handle.getFile();
+    } else {
+      if (!received.blob) {
+        throw new Error("Received file data is unavailable.");
+      }
+
+      source = received.blob;
+    }
 
     const picker = (
       window as Window & {
@@ -642,23 +709,17 @@ export default function Home() {
       }
     ).showSaveFilePicker;
 
-    if (picker) {
+    if (typeof picker === "function") {
+
       const target = await picker({
-        suggestedName: received.name,
-        types: [
-          {
-            description: received.mime || "File",
-            accept: {
-              [received.mime || "application/octet-stream"]: [".*"],
-            },
-          },
-        ],
+        suggestedName: safeStorageName(received.name),
       });
 
       const writable = await target.createWritable();
 
       try {
-        await source.stream().pipeTo(writable);
+        await writable.write(source);
+        await writable.close();
         setStatus(`Saved ${received.name}.`);
       } catch (error) {
         try {
@@ -667,14 +728,21 @@ export default function Home() {
         throw error;
       }
     } else {
+
       const url = URL.createObjectURL(source);
       const anchor = document.createElement("a");
+
       anchor.href = url;
-      anchor.download = received.name;
+      anchor.download = safeStorageName(received.name);
       anchor.rel = "noopener";
+      anchor.style.display = "none";
+
+      document.body.appendChild(anchor);
       anchor.click();
+      anchor.remove();
 
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
       setStatus(`Downloaded ${received.name}.`);
     }
   }
@@ -688,15 +756,6 @@ export default function Home() {
           throw new Error("Received a new file before the previous file finished.");
         }
 
-        if (
-          typeof navigator.storage?.getDirectory !== "function"
-        ) {
-          throw new Error(
-            "This browser does not support disk-backed file receiving. " +
-              "Use the latest Chrome or Edge.",
-          );
-        }
-
         const fileId = String(m.id);
         const name = String(m.name);
         const size = Number(m.size);
@@ -707,22 +766,52 @@ export default function Home() {
           !Number.isSafeInteger(size) ||
           size < 0 ||
           !Number.isSafeInteger(total) ||
-          total < 0
+          total < 0 ||
+          total !== Math.ceil(size / CHUNK)
         ) {
           throw new Error("Invalid file metadata.");
         }
 
-        const root = await navigator.storage.getDirectory();
-        const directory = await root.getDirectoryHandle("dropsend-transfers", {
-          create: true,
-        });
+        if (!hasOpfs() && size > MEMORY_FALLBACK_LIMIT) {
+          throw new Error(
+            `This browser does not provide disk-backed receiving. ` +
+              `Files larger than ${formatBytes(MEMORY_FALLBACK_LIMIT)} ` +
+              "cannot be safely received here. Use a current browser with OPFS support.",
+          );
+        }
 
-        const storageName = `${fileId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${safeStorageName(name)}`;
-        const opfsHandle = await directory.getFileHandle(storageName, {
-          create: true,
-        });
+        let storage: "opfs" | "memory" = "memory";
+        let opfsHandle: FileSystemFileHandle | undefined;
+        let writable: FileSystemWritableFileStream | undefined;
 
-        const writable = await opfsHandle.createWritable();
+        if (hasOpfs()) {
+          try {
+            const root = await navigator.storage.getDirectory();
+            const directory = await root.getDirectoryHandle("dropsend-transfers", {
+              create: true,
+            });
+
+            const storageName =
+              `${fileId.replace(/[^a-zA-Z0-9_-]/g, "_")}-` +
+              safeStorageName(name);
+
+            opfsHandle = await directory.getFileHandle(storageName, {
+              create: true,
+            });
+
+            writable = await opfsHandle.createWritable();
+            storage = "opfs";
+          } catch {
+            if (size > MEMORY_FALLBACK_LIMIT) {
+              throw new Error(
+                "Browser storage could not be opened for this large file. " +
+                  "Try a normal browsing window or a browser with OPFS support.",
+              );
+            }
+
+            storage = "memory";
+          }
+        }
 
         const file: RxFile = {
           id: fileId,
@@ -733,16 +822,23 @@ export default function Home() {
           received: 0,
           nextIndex: 0,
           hash: sha256.create() as IncrementalHash,
+          storage,
           opfsHandle,
           writable,
+          chunks: [],
         };
+
 
         rxRef.current = file;
 
         setCurrentName(file.name);
         setProgress(0);
         setTransferred(0);
-        setStatus(`Receiving ${file.name}…`);
+        setStatus(
+          storage === "opfs"
+            ? `Receiving ${file.name}…`
+            : `Receiving ${file.name} in browser memory…`,
+        );
       } else if (m.type === "file-end") {
         const file = rxRef.current;
 
@@ -770,15 +866,30 @@ export default function Home() {
           throw new Error("SHA-256 verification failed.");
         }
 
-        await file.writable.close();
+        if (file.storage === "opfs") {
+          await file.writable?.close();
+        }
 
-        const completed: ReceivedFile = {
-          id: file.id,
-          name: file.name,
-          size: file.size,
-          mime: file.mime,
-          handle: file.opfsHandle,
-        };
+        const completed: ReceivedFile =
+          file.storage === "opfs"
+            ? {
+                id: file.id,
+                name: file.name,
+                size: file.size,
+                mime: file.mime,
+                storage: "opfs",
+                handle: file.opfsHandle,
+              }
+            : {
+                id: file.id,
+                name: file.name,
+                size: file.size,
+                mime: file.mime,
+                storage: "memory",
+                blob: new Blob(file.chunks, {
+                  type: file.mime || "application/octet-stream",
+                }),
+              };
 
         receivedFilesRef.current = [
           ...receivedFilesRef.current,
@@ -820,7 +931,12 @@ export default function Home() {
 
     const bytes = new Uint8Array(plain);
 
-    await file.writable.write(bytes);
+    if (file.storage === "opfs") {
+      await file.writable?.write(bytes);
+    } else {
+      file.chunks.push(bytes);
+    }
+
     file.hash.update(bytes);
 
     file.received += bytes.byteLength;
