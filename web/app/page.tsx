@@ -73,6 +73,7 @@ export default function Home() {
 
   const sendStarted = useRef(false);
   const connectionTimer = useRef<number | null>(null);
+  const receiveQueue = useRef(Promise.resolve());
 
   useEffect(() => {
     const params = new URLSearchParams(location.hash.slice(1));
@@ -322,9 +323,7 @@ export default function Home() {
           return;
         }
       }
-    } catch {
-      // Connection diagnostics are informational only.
-    }
+    } catch {}
   }
 
   async function createSenderPeer() {
@@ -484,13 +483,15 @@ export default function Home() {
     };
 
     dc.onmessage = (e) => {
-      void receiveMessage(e.data).catch((err) =>
-        fail(
-          err instanceof Error
-            ? err.message
-            : "Could not process received data.",
-        ),
-      );
+      receiveQueue.current = receiveQueue.current
+        .then(() => receiveMessage(e.data))
+        .catch((err) => {
+          fail(
+            err instanceof Error
+              ? err.message
+              : "Could not process received data.",
+          );
+        });
     };
   }
 
@@ -618,6 +619,8 @@ export default function Home() {
         setProgress(0);
         setTransferred(0);
 
+        rxRef.current = file;
+
         const picker = (
           window as Window & {
             showSaveFilePicker?: (
@@ -634,8 +637,6 @@ export default function Home() {
           file.writable = await handle.createWritable();
         }
 
-        rxRef.current = file;
-
         setStatus(`Receiving ${file.name}…`);
       } else if (m.type === "file-end") {
         const file = rxRef.current;
@@ -645,6 +646,12 @@ export default function Home() {
         }
 
         file.expectedHash = String(m.sha256);
+
+        if (file.received !== file.size) {
+          throw new Error(
+            `Incomplete file: received ${file.received} of ${file.size} bytes.`,
+          );
+        }
 
         if (file.writable) {
           await file.writable.close();
@@ -736,6 +743,7 @@ export default function Home() {
     roleRef.current = null;
 
     sendStarted.current = false;
+    receiveQueue.current = Promise.resolve();
 
     setFiles([]);
     setRole(null);
