@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
+
+import "./page.css";
 
 import { QRCodeSVG } from "qrcode.react";
 
@@ -129,6 +131,37 @@ export default function Home() {
   const connectionTimer = useRef<number | null>(null);
   const receiveQueue = useRef(Promise.resolve());
   const receivedFilesRef = useRef<ReceivedFile[]>([]);
+
+  useEffect(() => {
+    const elements = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-reveal]"),
+    );
+
+    if (!elements.length) {
+      return;
+    }
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      elements.forEach((element) => element.classList.add("is-in-view"));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-in-view");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -8% 0px" },
+    );
+
+    elements.forEach((element) => observer.observe(element));
+
+    return () => observer.disconnect();
+  }, [role, files.length, receivedFiles.length, complete]);
 
   useEffect(() => {
     if (!hasWebRtcSupport()) {
@@ -405,27 +438,19 @@ export default function Home() {
           return;
         }
       }
-    } catch {
-    }
+    } catch {}
   }
 
   async function createSenderPeer() {
     const pc = createPeer();
 
     pcRef.current = pc;
-    console.log("[WebRTC] SENDER peer created");
 
-    pc.oniceconnectionstatechange = () => {
-      console.log("[WebRTC] SENDER ICE:", pc.iceConnectionState);
-    };
+    pc.oniceconnectionstatechange = () => {};
 
-    pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] SENDER CONNECTION:", pc.connectionState);
-    };
+    pc.onconnectionstatechange = () => {};
 
-    pc.onsignalingstatechange = () => {
-      console.log("[WebRTC] SENDER SIGNALING:", pc.signalingState);
-    };
+    pc.onsignalingstatechange = () => {};
     const dc = pc.createDataChannel("dropsend-v1", {
       ordered: true,
     });
@@ -461,19 +486,12 @@ export default function Home() {
     const pc = createPeer();
 
     pcRef.current = pc;
-    console.log("[WebRTC] RECEIVER peer created");
 
-    pc.oniceconnectionstatechange = () => {
-      console.log("[WebRTC] RECEIVER ICE:", pc.iceConnectionState);
-    };
+    pc.oniceconnectionstatechange = () => {};
 
-    pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] RECEIVER CONNECTION:", pc.connectionState);
-    };
+    pc.onconnectionstatechange = () => {};
 
-    pc.onsignalingstatechange = () => {
-      console.log("[WebRTC] RECEIVER SIGNALING:", pc.signalingState);
-    };
+    pc.onsignalingstatechange = () => {};
     pc.ondatachannel = (e) => {
       setupChannel(e.channel);
     };
@@ -497,7 +515,6 @@ export default function Home() {
   async function handleSignal(
     data: RTCSessionDescriptionInit | RTCIceCandidateInit,
   ) {
-    console.log("[WebRTC] RECEIVED SIGNAL:", data);
     const pc = pcRef.current;
 
     if (!pc) {
@@ -713,7 +730,6 @@ export default function Home() {
     ).showSaveFilePicker;
 
     if (typeof picker === "function") {
-
       const target = await picker({
         suggestedName: safeStorageName(received.name),
       });
@@ -731,7 +747,6 @@ export default function Home() {
         throw error;
       }
     } else {
-
       const url = URL.createObjectURL(source);
       const anchor = document.createElement("a");
 
@@ -835,7 +850,6 @@ export default function Home() {
           writable,
           chunks: [],
         };
-
 
         rxRef.current = file;
 
@@ -992,224 +1006,697 @@ export default function Home() {
         }#room=${encodeURIComponent(room)}&key=${encodeURIComponent(secret)}`
       : "";
 
+  async function copyShareUrl() {
+    if (!shareUrl) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setStatus("Transfer link copied.");
+    } catch {
+      setError(
+        "Could not copy the transfer link. Copy it from the address bar instead.",
+      );
+    }
+  }
+
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  const isTransferring =
+    status.startsWith("Receiving") ||
+    status.startsWith("Sending") ||
+    status.startsWith("Saved") ||
+    status.startsWith("Verified");
+  const connectionReady =
+    status.includes("established") || status.includes("channel ready");
+
   return (
-    <main className="page">
-      <section className="shell">
-        <div className="brand">DROPSEND: Secure File Transfer Made Easy!</div>
+    <main className="ds-page">
+      <div className="ds-noise" aria-hidden="true" />
+      <div className="ds-orb ds-orb-a" aria-hidden="true" />
+      <div className="ds-orb ds-orb-b" aria-hidden="true" />
 
-        <h1>Send files privately.</h1>
+      <header className="ds-nav">
+        <button
+          className="ds-brand"
+          onClick={reset}
+          aria-label="Go to DropSend home"
+        >
+          <span className="ds-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none">
+              <path
+                d="M11 8.5h13.5c4.4 0 8 3.6 8 8v4.5"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M29 31.5H15.5c-4.4 0-8-3.6-8-8V19"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+              />
+              <path
+                d="M20 14.5 26.5 20 20 25.5"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M13.5 20h13"
+                stroke="currentColor"
+                strokeWidth="2.8"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+          <span className="ds-brand-wordmark">
+            <b>Drop</b>
+            <em>Send</em>
+          </span>
+        </button>
 
-        <p className="subtitle">
-          Encrypted browser-to-browser file transfer. No accounts, no cloud
-          storage.
-        </p>
-
-        {!role && (
-          <>
-            <label
-              className={`drop ${drag ? "drag" : ""}`}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDrag(true);
-              }}
-              onDragLeave={() => setDrag(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-
-                setDrag(false);
-
-                setSelected(e.dataTransfer.files);
-              }}
+        {!role ? (
+          <nav className="ds-nav-links" aria-label="Primary navigation">
+            <a href="#how-it-works">How it works</a>
+            <a href="#security">Security</a>
+            <a
+              href="https://github.com/boradesanket13/dropsend"
+              target="_blank"
+              rel="noreferrer"
             >
+              GitHub
+            </a>
+            <button
+              className="ds-nav-cta"
+              onClick={() =>
+                document
+                  .getElementById("share")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              Start sharing
+            </button>
+          </nav>
+        ) : (
+          <button className="ds-nav-exit" onClick={reset}>
+            Exit transfer
+          </button>
+        )}
+      </header>
+
+      {!role ? (
+        <>
+          <section className="ds-hero" id="share" data-reveal="hero">
+            <div className="ds-hero-copy" data-reveal="hero-copy">
+              <div className="ds-eyebrow">
+                <span /> DIRECT FILE TRANSFER
+              </div>
+              <h1>
+                Send files.
+                <br />
+                <em>Keep the middle out.</em>
+              </h1>
+              <p>
+                A private transfer lane between browsers. Your files are
+                encrypted locally, then move directly between the devices that
+                matter.
+              </p>
+              <div className="ds-hero-actions" data-reveal="up">
+                <label className="ds-button ds-button-primary">
+                  <input
+                    hidden
+                    type="file"
+                    multiple
+                    onChange={(event) =>
+                      event.target.files && setSelected(event.target.files)
+                    }
+                  />
+                  Select files
+                  <span aria-hidden="true">＋</span>
+                </label>
+                <a className="ds-button ds-button-quiet" href="#how-it-works">
+                  Explore the flow
+                </a>
+              </div>
+              <div
+                className="ds-proof-row"
+                aria-label="Product properties"
+                data-reveal="line"
+              >
+                <span>
+                  <i /> Local encryption
+                </span>
+                <span>
+                  <i /> Direct channel
+                </span>
+                <span>
+                  <i /> Zero signup
+                </span>
+              </div>
+            </div>
+
+            <div
+              className="ds-network-card"
+              data-reveal="scale"
+              aria-label="Direct browser-to-browser transfer visualization"
+            >
+              <div className="ds-network-grid" />
+              <div
+                className="ds-network-label ds-network-label-top"
+                data-reveal="line"
+              >
+                DIRECT CONNECTION
+              </div>
+              <div className="ds-network-center">
+                <div className="ds-center-ring ds-ring-one" />
+                <div className="ds-center-ring ds-ring-two" />
+                <div className="ds-center-core">
+                  <span className="ds-bolt">DS</span>
+                  <small>DIRECT</small>
+                </div>
+              </div>
+              <div className="ds-device ds-device-one">
+                <div className="ds-laptop">
+                  <span />
+                </div>
+                <b>This browser</b>
+                <small>Encrypted locally</small>
+              </div>
+              <div className="ds-device ds-device-two">
+                <div className="ds-phone">
+                  <span />
+                </div>
+                <b>Peer browser</b>
+                <small>Direct channel</small>
+              </div>
+              <div className="ds-device ds-device-three">
+                <div className="ds-tablet">
+                  <span />
+                </div>
+                <b>Compatible browser</b>
+              </div>
+              <svg
+                className="ds-network-lines"
+                viewBox="0 0 620 520"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path d="M145 156 C230 150 250 210 310 260" />
+                <path d="M310 260 C385 270 420 215 492 174" />
+                <path d="M310 260 C355 330 425 365 485 378" />
+              </svg>
+              <div className="ds-network-bottom" data-reveal="line">
+                No file bucket in the middle.
+              </div>
+            </div>
+          </section>
+
+          {files.length > 0 && (
+            <section
+              className="ds-selection"
+              aria-labelledby="selected-files-title"
+              data-reveal="up"
+            >
+              <div className="ds-section-heading compact">
+                <div>
+                  <div className="ds-eyebrow">READY TO TRANSFER</div>
+                  <h2 id="selected-files-title">
+                    {files.length} {files.length === 1 ? "file" : "files"}
+                  </h2>
+                </div>
+                <span>{formatBytes(totalSize)}</span>
+              </div>
+              <div className="ds-file-list">
+                {files.map((file, index) => (
+                  <div
+                    className="ds-file"
+                    key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
+                    data-reveal="row"
+                    style={
+                      {
+                        "--reveal-delay": `${Math.min(index, 8) * 55}ms`,
+                      } as CSSProperties
+                    }
+                  >
+                    <div className="ds-file-symbol" aria-hidden="true">
+                      {file.type.startsWith("image/")
+                        ? "▧"
+                        : file.type.startsWith("video/")
+                          ? "▶"
+                          : "□"}
+                    </div>
+                    <div className="ds-file-copy">
+                      <strong title={file.name}>{file.name}</strong>
+                      <span>{formatBytes(file.size)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="ds-selection-actions" data-reveal="up">
+                <button
+                  className="ds-button ds-button-primary"
+                  onClick={() => void startSender()}
+                >
+                  Create private transfer <span>→</span>
+                </button>
+                <button
+                  className="ds-button ds-button-quiet"
+                  onClick={() => {
+                    filesRef.current = [];
+                    setFiles([]);
+                  }}
+                >
+                  Clear selection
+                </button>
+              </div>
+            </section>
+          )}
+
+          <section className="ds-marquee" aria-hidden="true" data-reveal="line">
+            <span>LOCAL FIRST</span>
+            <i />
+            <span>DIRECT CHANNEL</span>
+            <i />
+            <span>NO FILE STORAGE</span>
+            <i />
+            <span>LOCAL FIRST</span>
+          </section>
+
+          <section className="ds-features" id="how-it-works" data-reveal="up">
+            <div className="ds-section-heading" data-reveal="up">
+              <div>
+                <div className="ds-eyebrow">HOW IT WORKS</div>
+                <h2>
+                  A shorter path
+                  <br />
+                  to a private transfer.
+                </h2>
+              </div>
+              <p>
+                DropSend keeps the experience focused: select locally, pair
+                privately, move the encrypted bytes, then verify what arrived.
+              </p>
+            </div>
+
+            <div className="ds-feature-grid">
+              <article
+                className="ds-feature-card ds-feature-large"
+                data-reveal="up"
+                style={{ "--reveal-delay": "0ms" } as CSSProperties}
+              >
+                <div className="ds-feature-number">01</div>
+                <div className="ds-mini-drop">
+                  <span>＋</span>
+                  <b>Pick locally</b>
+                  <small>One or many files</small>
+                </div>
+                <h3>Select without uploading.</h3>
+                <p>
+                  Your selection stays in the browser while the private session
+                  is prepared. There is no upload queue waiting on a server.
+                </p>
+              </article>
+              <article
+                className="ds-feature-card"
+                data-reveal="up"
+                style={{ "--reveal-delay": "90ms" } as CSSProperties}
+              >
+                <div className="ds-feature-number">02</div>
+                <div className="ds-mini-qr">
+                  <div />
+                  <div />
+                  <div />
+                  <div />
+                  <span>PAIR</span>
+                </div>
+                <h3>Pair the second screen.</h3>
+                <p>
+                  Use the short room link or QR code. The second browser can
+                  join without an account or installation.
+                </p>
+              </article>
+              <article
+                className="ds-feature-card"
+                data-reveal="up"
+                style={{ "--reveal-delay": "180ms" } as CSSProperties}
+              >
+                <div className="ds-feature-number">03</div>
+                <div className="ds-mini-transfer">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <h3>Let the browsers move it.</h3>
+                <p>
+                  WebRTC carries the encrypted chunks between peers while the
+                  signaling service stays outside the file path.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <section className="ds-security" id="security" data-reveal="up">
+            <div className="ds-security-visual" data-reveal="scale">
+              <div className="ds-security-orbit orbit-one" />
+              <div className="ds-security-orbit orbit-two" />
+              <div className="ds-security-core">
+                <span>AES</span>
+                <small>GCM</small>
+              </div>
+              <div className="ds-security-node node-a">Browser A</div>
+              <div className="ds-security-node node-b">Browser B</div>
+              <div className="ds-security-line line-a" />
+              <div className="ds-security-line line-b" />
+            </div>
+            <div className="ds-security-copy" data-reveal="up">
+              <div className="ds-eyebrow">PRIVATE ARCHITECTURE</div>
+              <h2>The middle helps connect you. It does not hold your file.</h2>
+              <p>
+                DropSend uses the signaling service to coordinate the
+                connection. File content is encrypted in the browser before it
+                enters the WebRTC data channel, keeping the transfer path
+                between peers.
+              </p>
+              <div className="ds-security-list" data-reveal="line">
+                <div>
+                  <span>01</span>
+                  <b>Encrypted before transport</b>
+                  <small>
+                    AES-GCM protects each chunk before it enters the data
+                    channel.
+                  </small>
+                </div>
+                <div>
+                  <span>02</span>
+                  <b>Direct browser channel</b>
+                  <small>
+                    WebRTC carries the file payload between the connected
+                    browsers.
+                  </small>
+                </div>
+                <div>
+                  <span>03</span>
+                  <b>No account or file bucket</b>
+                  <small>
+                    The signaling layer coordinates the session without becoming
+                    a file-storage layer.
+                  </small>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="ds-process" data-reveal="up">
+            <div className="ds-process-heading">
+              <div className="ds-eyebrow">THE FLOW</div>
+              <h2>Four deliberate steps.</h2>
+            </div>
+            <div className="ds-process-track" data-reveal="up">
+              <div>
+                <span>01</span>
+                <b>Select</b>
+                <small>Choose files locally.</small>
+              </div>
+              <div className="ds-process-arrow">→</div>
+              <div>
+                <span>02</span>
+                <b>Pair</b>
+                <small>Open the private session.</small>
+              </div>
+              <div className="ds-process-arrow">→</div>
+              <div>
+                <span>03</span>
+                <b>Transfer</b>
+                <small>Send encrypted chunks.</small>
+              </div>
+              <div className="ds-process-arrow">→</div>
+              <div>
+                <span>04</span>
+                <b>Verify</b>
+                <small>Validate the completed file.</small>
+              </div>
+            </div>
+          </section>
+
+          <section className="ds-final-cta" data-reveal="scale">
+            <div className="ds-final-glow" />
+            <div className="ds-eyebrow">READY WHEN YOU ARE</div>
+            <h2>
+              Ready to move
+              <br />
+              <em>one file?</em>
+            </h2>
+            <p>
+              No account. No cloud folder. Just two browsers and a private
+              connection.
+            </p>
+            <label className="ds-button ds-button-primary ds-final-button">
               <input
                 hidden
                 type="file"
                 multiple
-                onChange={(e) => e.target.files && setSelected(e.target.files)}
+                onChange={(event) =>
+                  event.target.files && setSelected(event.target.files)
+                }
               />
-
-              <strong>Drop files here</strong>
-
-              <div className="meta">or click to browse</div>
+              Choose a file
+              <span>＋</span>
             </label>
+          </section>
 
-            {files.length > 0 && (
-              <>
-                <div className="panel">
-                  {files.map((f, i) => (
-                    <div
-                      className="file"
-                      key={`${f.name}-${f.size}-${f.lastModified}-${i}`}
-                    >
-                      <span>{f.name}</span>
-
-                      <span className="meta">{formatBytes(f.size)}</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="actions">
-                  <button
-                    className="primary"
-                    onClick={() => void startSender()}
-                  >
-                    Create transfer
-                  </button>
-
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      filesRef.current = [];
-
-                      setFiles([]);
-                    }}
-                  >
-                    Clear
-                  </button>
-                </div>
-              </>
-            )}
-
-            <p className="small">
-              🎯 Fun Fact: The signaling service exchanges connection metadata
-              only. File data travels over WebRTC🚀
-            </p>
-          </>
-        )}
-
-        {role && (
-          <div className="panel">
-            {role === "sender" && !complete && (
-              <div
-                style={{
-                  padding: 24,
-                }}
-              >
-                <h2>Waiting for recipient</h2>
-
-                <p className="status">
-                  Scan this QR code on the receiving device.
-                </p>
-
-                <div className="qr">
-                  <QRCodeSVG value={shareUrl} size={240} />
-
-                  <div className="code">{room}</div>
-                </div>
-              </div>
-            )}
-
-            {role === "receiver" && !complete && (
-              <div
-                style={{
-                  padding: 24,
-                }}
-              >
-                <h2>Joining transfer</h2>
-
-                <p className="status">{status}</p>
-              </div>
-            )}
-
-            {(complete ||
-              status.startsWith("Receiving") ||
-              status.startsWith("Sending") ||
-              status.startsWith("Saved") ||
-              status.startsWith("Verified")) && (
-              <div
-                style={{
-                  padding: 24,
-                }}
-              >
-                <h2>
-                  {complete ? "Transfer complete" : "Transfer in progress"}
-                </h2>
-
-                <p className="status">{status}</p>
-
-                <p>{currentName}</p>
-
-                <div className="progress">
-                  <div
-                    style={{
-                      width: `${Math.min(100, progress)}%`,
-                    }}
+          <footer className="ds-footer" data-reveal="line">
+            <button
+              className="ds-footer-brand"
+              onClick={reset}
+              aria-label="Go to DropSend home"
+            >
+              <span className="ds-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 40 40" fill="none">
+                  <path
+                    d="M11 8.5h13.5c4.4 0 8 3.6 8 8v4.5"
+                    stroke="currentColor"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
                   />
-                </div>
-
-                <p className="status">
-                  {formatBytes(transferred)} · {progress.toFixed(1)}%
-                </p>
-              </div>
-            )}
-
-            {receivedFiles.length > 0 && (
-              <div
-                className="panel"
-                style={{
-                  margin: "0 16px 16px",
-                  padding: 16,
-                }}
+                  <path
+                    d="M29 31.5H15.5c-4.4 0-8-3.6-8-8V19"
+                    stroke="currentColor"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d="M20 14.5 26.5 20 20 25.5"
+                    stroke="currentColor"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M13.5 20h13"
+                    stroke="currentColor"
+                    strokeWidth="2.8"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <span className="ds-brand-wordmark">
+                <b>Drop</b>
+                <em>Send</em>
+              </span>
+            </button>
+            <div className="ds-footer-links">
+              <a href="#how-it-works">How it works</a>
+              <a href="#security">Security</a>
+              <a
+                href="https://github.com/boradesanket13/dropsend"
+                target="_blank"
+                rel="noreferrer"
               >
-                <h3 style={{ marginTop: 0 }}>Received files</h3>
+                GitHub
+              </a>
+            </div>
+            <p>Direct file transfer, designed around browser privacy.</p>
+          </footer>
+        </>
+      ) : (
+        <section className="ds-transfer" aria-live="polite" data-reveal="up">
+          <div className="ds-transfer-top" data-reveal="up">
+            <div>
+              <div className="ds-eyebrow">
+                {complete
+                  ? "TRANSFER VERIFIED"
+                  : role === "sender"
+                    ? "SENDING SESSION"
+                    : "RECEIVING SESSION"}
+              </div>
+              <h1>
+                {complete
+                  ? "Transfer complete."
+                  : role === "sender"
+                    ? "Ready to send."
+                    : "Connecting securely."}
+              </h1>
+              <p>{status}</p>
+            </div>
+            <div
+              className={`ds-live-pill ${connectionReady ? "is-ready" : ""}`}
+            >
+              <i /> {connectionReady ? "Connected" : "Connecting"}
+            </div>
+          </div>
 
-                {receivedFiles.map((received) => (
-                  <div
-                    className="file"
-                    key={received.id}
-                    style={{
-                      gap: 12,
-                      alignItems: "center",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div>{received.name}</div>
-                      <div className="meta">{formatBytes(received.size)}</div>
+          {role === "sender" && !complete && (
+            <div className="ds-transfer-grid">
+              <div className="ds-connect-panel" data-reveal="scale">
+                <div className="ds-connect-visual">
+                  <div className="ds-connect-device">
+                    <div className="ds-laptop">
+                      <span />
                     </div>
+                    <small>This device</small>
+                  </div>
+                  <div className="ds-connect-path">
+                    <i />
+                    <span>DIRECT</span>
+                    <i />
+                  </div>
+                  <div className="ds-connect-device muted">
+                    <div className="ds-phone">
+                      <span />
+                    </div>
+                    <small>Waiting for peer</small>
+                  </div>
+                </div>
+                <div className="ds-qr-box" data-reveal="scale">
+                  <div className="ds-eyebrow">SCAN TO CONNECT</div>
+                  <div className="ds-qr">
+                    <QRCodeSVG value={shareUrl} size={230} includeMargin />
+                  </div>
+                  <div className="ds-room-code">{room}</div>
+                  <button
+                    className="ds-copy-button"
+                    onClick={() => void copyShareUrl()}
+                  >
+                    Copy private transfer link <span>↗</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
+          {role === "receiver" && !complete && !isTransferring && (
+            <div className="ds-wait-panel" data-reveal="scale">
+              <div className="ds-radar">
+                <span />
+                <i />
+                <b />
+              </div>
+              <div>
+                <div className="ds-eyebrow">PRIVATE SESSION</div>
+                <h2>Finding the other device</h2>
+                <p>{status}</p>
+              </div>
+            </div>
+          )}
+
+          {(complete || isTransferring) && (
+            <div
+              className={`ds-transfer-progress ${complete ? "is-complete" : ""}`}
+              data-reveal="up"
+            >
+              <div className="ds-transfer-progress-head">
+                <div>
+                  <div className="ds-eyebrow">
+                    {complete
+                      ? "SECURELY TRANSFERRED"
+                      : role === "sender"
+                        ? "SENDING NOW"
+                        : "RECEIVING NOW"}
+                  </div>
+                  <h2>{currentName || "Preparing files…"}</h2>
+                </div>
+                <strong>
+                  {complete ? "✓" : `${Math.min(100, progress).toFixed(0)}%`}
+                </strong>
+              </div>
+              <progress
+                max="100"
+                value={Math.min(100, progress)}
+                aria-label="Transfer progress"
+              />
+              <div className="ds-transfer-meta">
+                <span>{formatBytes(transferred)} transferred</span>
+                <span>{complete ? "SHA-256 verified" : status}</span>
+              </div>
+            </div>
+          )}
+
+          {receivedFiles.length > 0 && (
+            <div className="ds-received-panel" data-reveal="up">
+              <div className="ds-section-heading compact">
+                <div>
+                  <div className="ds-eyebrow">ON THIS DEVICE</div>
+                  <h2>Received files</h2>
+                </div>
+                <span>{receivedFiles.length}</span>
+              </div>
+              <div className="ds-file-list">
+                {receivedFiles.map((received) => (
+                  <div className="ds-file" key={received.id} data-reveal="row">
+                    <div className="ds-file-symbol" aria-hidden="true">
+                      □
+                    </div>
+                    <div className="ds-file-copy">
+                      <strong title={received.name}>{received.name}</strong>
+                      <span>{formatBytes(received.size)}</span>
+                    </div>
                     <button
-                      className="primary"
+                      className="ds-save-button"
                       onClick={() =>
-                        void saveReceivedFile(received).catch((e) =>
+                        void saveReceivedFile(received).catch((cause) =>
                           fail(
-                            e instanceof Error
-                              ? e.message
+                            cause instanceof Error
+                              ? cause.message
                               : "Could not save the received file.",
                           ),
                         )
                       }
                     >
-                      Save
+                      Save <span>↓</span>
                     </button>
                   </div>
                 ))}
               </div>
-            )}
-
-            {error && (
-              <div
-                className="error"
-                style={{
-                  margin: 16,
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            <div
-              className="actions"
-              style={{
-                padding: "0 24px 24px",
-              }}
-            >
-              <button className="secondary" onClick={reset}>
-                Start over
-              </button>
             </div>
-          </div>
-        )}
-      </section>
+          )}
+
+          {complete && (
+            <div className="ds-complete-panel" data-reveal="scale">
+              <div className="ds-complete-icon">✓</div>
+              <div>
+                <b>Transfer verified</b>
+                <span>
+                  Encrypted in your browser and transferred directly between
+                  peers.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="ds-error" role="alert" data-reveal="up">
+              {error}
+            </div>
+          )}
+
+          <button className="ds-back-button" onClick={reset}>
+            Start a new transfer
+          </button>
+        </section>
+      )}
     </main>
   );
 }
