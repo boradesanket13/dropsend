@@ -54,7 +54,7 @@ type RxFile = {
   storage: "opfs" | "memory";
   opfsHandle?: FileSystemFileHandle;
   writable?: FileSystemWritableFileStream;
-  chunks: Uint8Array[];
+  chunks: ArrayBuffer[];
 };
 
 type ReceivedFile = {
@@ -68,7 +68,9 @@ type ReceivedFile = {
 };
 
 function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 function safeStorageName(name: string): string {
@@ -404,7 +406,6 @@ export default function Home() {
         }
       }
     } catch {
-      
     }
   }
 
@@ -705,7 +706,9 @@ export default function Home() {
 
     const picker = (
       window as Window & {
-        showSaveFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle>;
+        showSaveFilePicker?: (
+          options?: unknown,
+        ) => Promise<FileSystemFileHandle>;
       }
     ).showSaveFilePicker;
 
@@ -753,7 +756,9 @@ export default function Home() {
 
       if (m.type === "file-start") {
         if (rxRef.current) {
-          throw new Error("Received a new file before the previous file finished.");
+          throw new Error(
+            "Received a new file before the previous file finished.",
+          );
         }
 
         const fileId = String(m.id);
@@ -787,9 +792,12 @@ export default function Home() {
         if (hasOpfs()) {
           try {
             const root = await navigator.storage.getDirectory();
-            const directory = await root.getDirectoryHandle("dropsend-transfers", {
-              create: true,
-            });
+            const directory = await root.getDirectoryHandle(
+              "dropsend-transfers",
+              {
+                create: true,
+              },
+            );
 
             const storageName =
               `${fileId.replace(/[^a-zA-Z0-9_-]/g, "_")}-` +
@@ -891,10 +899,7 @@ export default function Home() {
                 }),
               };
 
-        receivedFilesRef.current = [
-          ...receivedFilesRef.current,
-          completed,
-        ];
+        receivedFilesRef.current = [...receivedFilesRef.current, completed];
         setReceivedFiles([...receivedFilesRef.current]);
 
         rxRef.current = null;
@@ -934,7 +939,9 @@ export default function Home() {
     if (file.storage === "opfs") {
       await file.writable?.write(bytes);
     } else {
-      file.chunks.push(bytes);
+      const chunkBuffer = new ArrayBuffer(bytes.byteLength);
+      new Uint8Array(chunkBuffer).set(bytes);
+      file.chunks.push(chunkBuffer);
     }
 
     file.hash.update(bytes);
@@ -1157,9 +1164,7 @@ export default function Home() {
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div>{received.name}</div>
-                      <div className="meta">
-                        {formatBytes(received.size)}
-                      </div>
+                      <div className="meta">{formatBytes(received.size)}</div>
                     </div>
 
                     <button
