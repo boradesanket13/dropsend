@@ -1111,17 +1111,16 @@ export default function Home() {
           <section className="ds-hero" id="share" data-reveal="hero">
             <div className="ds-hero-copy" data-reveal="hero-copy">
               <div className="ds-eyebrow">
-                <span /> DIRECT FILE TRANSFER
+                <span /> Developed around Data Privacy
               </div>
               <h1>
-                Send files.
+                Send files
                 <br />
-                <em>Keep the middle out.</em>
+                <em>privately.</em>
               </h1>
               <p>
-                A private transfer lane between browsers. Your files are
-                encrypted locally, then move directly between the devices that
-                matter.
+                Your files are encrypted in your browser using AES GCM. Transferred directly between your devices via WebRTC. 
+                Your files stay out of the internet, cloud and out of our hands.
               </p>
               <div className="ds-hero-actions" data-reveal="up">
                 <label className="ds-button ds-button-primary">
@@ -1281,7 +1280,7 @@ export default function Home() {
             <i />
             <span>NO FILE STORAGE</span>
             <i />
-            <span>LOCAL FIRST</span>
+            <span>ZERO SIGN UP</span>
           </section>
 
           <section className="ds-features" id="how-it-works" data-reveal="up">
@@ -1518,7 +1517,7 @@ export default function Home() {
                 GitHub
               </a>
             </div>
-            <p>Direct file transfer, designed around browser privacy.</p>
+            <p>Direct file transfer, designed around data privacy.</p>
           </footer>
         </>
       ) : (
