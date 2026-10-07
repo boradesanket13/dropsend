@@ -7,10 +7,11 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   decryptChunk,
   encryptChunk,
-  hashBlob,
   importSecret,
   newSecret,
 } from "../lib/crypto";
+
+import { sha256 } from "@noble/hashes/sha2.js";
 
 import { formatBytes, newRoomId } from "../lib/format";
 import { createPeer } from "../lib/webrtc";
@@ -33,17 +34,41 @@ type Msg = {
   [key: string]: unknown;
 };
 
+type IncrementalHash = {
+  update(data: Uint8Array): unknown;
+  digest(): Uint8Array;
+};
+
 type RxFile = {
   id: string;
   name: string;
   size: number;
   mime: string;
-  chunks: Map<number, ArrayBuffer>;
   total: number;
   received: number;
+  nextIndex: number;
   expectedHash?: string;
-  writable?: FileSystemWritableFileStream;
+  hash: IncrementalHash;
+  opfsHandle: FileSystemFileHandle;
+  writable: FileSystemWritableFileStream;
 };
+
+type ReceivedFile = {
+  id: string;
+  name: string;
+  size: number;
+  mime: string;
+  handle: FileSystemFileHandle;
+};
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function safeStorageName(name: string): string {
+  const cleaned = name.replace(/[\\/\\0]/g, "_").trim() || "file";
+  return cleaned.slice(0, 180);
+}
 
 export default function Home() {
   const [files, setFiles] = useState<File[]>([]);
@@ -57,6 +82,7 @@ export default function Home() {
   const [currentName, setCurrentName] = useState("");
   const [complete, setComplete] = useState(false);
   const [drag, setDrag] = useState(false);
+  const [receivedFiles, setReceivedFiles] = useState<ReceivedFile[]>([]);
 
   const roleRef = useRef<Role | null>(null);
 
@@ -74,6 +100,7 @@ export default function Home() {
   const sendStarted = useRef(false);
   const connectionTimer = useRef<number | null>(null);
   const receiveQueue = useRef(Promise.resolve());
+  const receivedFilesRef = useRef<ReceivedFile[]>([]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.hash.slice(1));
@@ -323,7 +350,9 @@ export default function Home() {
           return;
         }
       }
-    } catch {}
+    } catch {
+      // Connection diagnostics are informational only.
+    }
   }
 
   async function createSenderPeer() {
@@ -547,6 +576,7 @@ export default function Home() {
         const id = `f${fileIndex}-${crypto.randomUUID()}`;
 
         const total = Math.ceil(file.size / CHUNK);
+        const fileHash = sha256.create() as IncrementalHash;
 
         dc.send(
           JSON.stringify({
@@ -565,6 +595,9 @@ export default function Home() {
             .slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK))
             .arrayBuffer();
 
+          const plainBytes = new Uint8Array(plain);
+          fileHash.update(plainBytes);
+
           const encrypted = await encryptChunk(keyRef.current!, plain, i);
 
           await sendPacket(dc, encrypted);
@@ -582,7 +615,7 @@ export default function Home() {
           JSON.stringify({
             type: "file-end",
             id,
-            sha256: await hashBlob(file),
+            sha256: bytesToHex(fileHash.digest()),
           }),
         );
       }
@@ -600,43 +633,115 @@ export default function Home() {
     }
   }
 
+  async function saveReceivedFile(received: ReceivedFile) {
+    const source = await received.handle.getFile();
+
+    const picker = (
+      window as Window & {
+        showSaveFilePicker?: (options?: unknown) => Promise<FileSystemFileHandle>;
+      }
+    ).showSaveFilePicker;
+
+    if (picker) {
+      const target = await picker({
+        suggestedName: received.name,
+        types: [
+          {
+            description: received.mime || "File",
+            accept: {
+              [received.mime || "application/octet-stream"]: [".*"],
+            },
+          },
+        ],
+      });
+
+      const writable = await target.createWritable();
+
+      try {
+        await source.stream().pipeTo(writable);
+        setStatus(`Saved ${received.name}.`);
+      } catch (error) {
+        try {
+          await writable.abort();
+        } catch {}
+        throw error;
+      }
+    } else {
+      const url = URL.createObjectURL(source);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = received.name;
+      anchor.rel = "noopener";
+      anchor.click();
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setStatus(`Downloaded ${received.name}.`);
+    }
+  }
+
   async function receiveMessage(data: unknown) {
     if (typeof data === "string") {
       const m = JSON.parse(data) as Msg;
 
       if (m.type === "file-start") {
+        if (rxRef.current) {
+          throw new Error("Received a new file before the previous file finished.");
+        }
+
+        if (
+          typeof navigator.storage?.getDirectory !== "function"
+        ) {
+          throw new Error(
+            "This browser does not support disk-backed file receiving. " +
+              "Use the latest Chrome or Edge.",
+          );
+        }
+
+        const fileId = String(m.id);
+        const name = String(m.name);
+        const size = Number(m.size);
+        const total = Number(m.total);
+        const mime = String(m.mime);
+
+        if (
+          !Number.isSafeInteger(size) ||
+          size < 0 ||
+          !Number.isSafeInteger(total) ||
+          total < 0
+        ) {
+          throw new Error("Invalid file metadata.");
+        }
+
+        const root = await navigator.storage.getDirectory();
+        const directory = await root.getDirectoryHandle("dropsend-transfers", {
+          create: true,
+        });
+
+        const storageName = `${fileId.replace(/[^a-zA-Z0-9_-]/g, "_")}-${safeStorageName(name)}`;
+        const opfsHandle = await directory.getFileHandle(storageName, {
+          create: true,
+        });
+
+        const writable = await opfsHandle.createWritable();
+
         const file: RxFile = {
-          id: String(m.id),
-          name: String(m.name),
-          size: Number(m.size),
-          mime: String(m.mime),
-          total: Number(m.total),
-          chunks: new Map(),
+          id: fileId,
+          name,
+          size,
+          mime,
+          total,
           received: 0,
+          nextIndex: 0,
+          hash: sha256.create() as IncrementalHash,
+          opfsHandle,
+          writable,
         };
+
+        rxRef.current = file;
 
         setCurrentName(file.name);
         setProgress(0);
         setTransferred(0);
-
-        rxRef.current = file;
-
-        const picker = (
-          window as Window & {
-            showSaveFilePicker?: (
-              options?: unknown,
-            ) => Promise<FileSystemFileHandle>;
-          }
-        ).showSaveFilePicker;
-
-        if (picker) {
-          const handle = await picker({
-            suggestedName: file.name,
-          });
-
-          file.writable = await handle.createWritable();
-        }
-
         setStatus(`Receiving ${file.name}…`);
       } else if (m.type === "file-end") {
         const file = rxRef.current;
@@ -653,52 +758,40 @@ export default function Home() {
           );
         }
 
-        if (file.writable) {
-          await file.writable.close();
-
-          setStatus(
-            `Saved ${file.name}. Each chunk passed AES-GCM authentication.`,
+        if (file.nextIndex !== file.total) {
+          throw new Error(
+            `Missing chunks: received ${file.nextIndex} of ${file.total}.`,
           );
-        } else {
-          const parts: ArrayBuffer[] = [];
-
-          for (let i = 0; i < file.total; i++) {
-            const part = file.chunks.get(i);
-
-            if (!part) {
-              throw new Error(`Missing chunk ${i}.`);
-            }
-
-            parts.push(part);
-          }
-
-          const blob = new Blob(parts, {
-            type: file.mime,
-          });
-
-          if ((await hashBlob(blob)) !== file.expectedHash) {
-            throw new Error("SHA-256 verification failed.");
-          }
-
-          const url = URL.createObjectURL(blob);
-
-          const a = document.createElement("a");
-
-          a.href = url;
-          a.download = file.name;
-
-          a.click();
-
-          setTimeout(() => URL.revokeObjectURL(url), 30_000);
-
-          setStatus(`Verified and saved ${file.name}.`);
         }
 
+        const actualHash = bytesToHex(file.hash.digest());
+
+        if (actualHash !== file.expectedHash) {
+          throw new Error("SHA-256 verification failed.");
+        }
+
+        await file.writable.close();
+
+        const completed: ReceivedFile = {
+          id: file.id,
+          name: file.name,
+          size: file.size,
+          mime: file.mime,
+          handle: file.opfsHandle,
+        };
+
+        receivedFilesRef.current = [
+          ...receivedFilesRef.current,
+          completed,
+        ];
+        setReceivedFiles([...receivedFilesRef.current]);
+
         rxRef.current = null;
+
+        setStatus(`Verified ${file.name}. Ready to save.`);
       } else if (m.type === "all-done") {
         setComplete(true);
-
-        setStatus("All files received.");
+        setStatus("All files received and verified.");
       }
 
       return;
@@ -715,20 +808,25 @@ export default function Home() {
       data as ArrayBuffer,
     );
 
-    if (index >= file.total || file.chunks.has(index)) {
-      throw new Error("Invalid or duplicate chunk index.");
+    if (index !== file.nextIndex) {
+      throw new Error(
+        `Unexpected chunk order: expected ${file.nextIndex}, received ${index}.`,
+      );
     }
 
-    if (file.writable) {
-      await file.writable.write(new Uint8Array(plain));
-    } else {
-      file.chunks.set(index, plain);
+    if (index >= file.total) {
+      throw new Error("Invalid chunk index.");
     }
 
-    file.received += plain.byteLength;
+    const bytes = new Uint8Array(plain);
+
+    await file.writable.write(bytes);
+    file.hash.update(bytes);
+
+    file.received += bytes.byteLength;
+    file.nextIndex += 1;
 
     setTransferred(file.received);
-
     setProgress(file.size ? (file.received / file.size) * 100 : 100);
   }
 
@@ -744,6 +842,9 @@ export default function Home() {
 
     sendStarted.current = false;
     receiveQueue.current = Promise.resolve();
+
+    receivedFilesRef.current = [];
+    setReceivedFiles([]);
 
     setFiles([]);
     setRole(null);
@@ -916,6 +1017,51 @@ export default function Home() {
                 <p className="status">
                   {formatBytes(transferred)} · {progress.toFixed(1)}%
                 </p>
+              </div>
+            )}
+
+            {receivedFiles.length > 0 && (
+              <div
+                className="panel"
+                style={{
+                  margin: "0 16px 16px",
+                  padding: 16,
+                }}
+              >
+                <h3 style={{ marginTop: 0 }}>Received files</h3>
+
+                {receivedFiles.map((received) => (
+                  <div
+                    className="file"
+                    key={received.id}
+                    style={{
+                      gap: 12,
+                      alignItems: "center",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div>{received.name}</div>
+                      <div className="meta">
+                        {formatBytes(received.size)}
+                      </div>
+                    </div>
+
+                    <button
+                      className="primary"
+                      onClick={() =>
+                        void saveReceivedFile(received).catch((e) =>
+                          fail(
+                            e instanceof Error
+                              ? e.message
+                              : "Could not save the received file.",
+                          ),
+                        )
+                      }
+                    >
+                      Save
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
 
