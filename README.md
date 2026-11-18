@@ -1,280 +1,84 @@
 # DropSend
-
-DropSend is a privacy-first browser-to-browser file transfer application.
-
-Files are encrypted in the browser and transferred directly between devices using WebRTC. A Cloudflare Worker and Durable Object are used for signaling only. DropSend does not require user accounts and does not store transferred files in the cloud.
-
+ 
+Send files straight from one browser to another. Files are encrypted in your browser and travel directly between devices over WebRTC. 
+ 
+## How it works
+ 
+1. sender picks files and gets a link or QR code.
+2. receiver opens it, and the two browsers connect through a small signaling server (a Cloudflare Worker with a Durable Object).
+3. files are encrypted and sent directly peer to peer. The signaling server only passes connection details and never sees the files.
+4. receiver checks a SHA-256 hash to confirm the file arrived intact
+```
+Browser A ──(WebSocket)──► Cloudflare Worker + Durable Object ◄──(WebSocket)── Browser B
+    │                         (signaling only: SDP / ICE)                          │
+    └═════════════════ encrypted WebRTC DataChannel ═══════════════════════════════┘
+```
+ 
 ## Features
+ 
+- direct browser-to-browser transfer
+- AES-GCM encryption with a per-chunk nonce
+- SHA-256 integrity check
+- multiple files, drag and drop, QR-code links
+- backpressure handling for large files
+- No accounts, no file storage
 
-- Browser-to-browser file transfer
-- AES-GCM authenticated encryption
-- WebRTC DataChannel transfers
-- No accounts
-- No cloud file storage
-- Multiple file selection
-- Drag-and-drop uploads
-- QR-code transfer links
-- SHA-256 integrity verification
-- Browser-native file saving when supported
-- WebRTC backpressure handling
-- Cloudflare Durable Object signaling
-- Responsive premium UI
-- Hover and scroll interactions with reduced-motion support
-
-## Architecture
-
-```text
-Browser A
-   |
-   | WebSocket signaling
-   v
-Cloudflare Worker
-   |
-   v
-Durable Object
-   |
-   | SDP / ICE
-   v
-Browser B
-
-Browser A <====== WebRTC DataChannel ======> Browser B
-                         |
-                    AES-GCM encryption
-                         |
-                        FILE
+  
+## Tech stack
+ 
+- **Web:** Next.js, React, TypeScript, Web Crypto API, WebRTC
+- **Signaling:** Cloudflare Workers, Durable Objects, WebSockets
+- **Deploy:** OpenNext, Wrangler, GitHub Actions
+- 
+## Project structure
+ 
 ```
-
-The signaling service coordinates WebRTC negotiation. File contents are transferred through the WebRTC DataChannel rather than through the signaling Worker.
-
-## Technology Stack
-
-### Web
-
-- Next.js
-- React
-- TypeScript
-- WebRTC
-- Web Crypto API
-- qrcode.react
-- OpenNext
-- Cloudflare Workers
-
-### Signaling
-
-- Cloudflare Workers
-- Cloudflare Durable Objects
-- WebSockets
-- Wrangler
-- TypeScript
-
-### Security
-
-- AES-GCM authenticated encryption
-- Per-chunk nonces
-- SHA-256 file integrity verification
-- Browser-generated transfer secret
-- Client-side transfer key
-
-## Project Structure
-
-```text
-dropsend/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml
-│       ├── deploy-web.yml
-│       └── deploy-signaling.yml
-├── signaling/
-│   ├── package.json
-│   ├── package-lock.json
-│   └── src/
-├── web/
-│   ├── app/
-│   │   ├── globals.css
-│   │   ├── layout.tsx
-│   │   ├── page.css
-│   │   └── page.tsx
-│   ├── lib/
-│   │   ├── crypto.ts
-│   │   ├── format.ts
-│   │   └── webrtc.ts
-│   ├── public/
-│   ├── next.config.ts
-│   ├── open-next.config.ts
-│   ├── wrangler.jsonc
-│   ├── package.json
-│   └── package-lock.json
-├── .gitignore
-├── CONTRIBUTING.md
-└── README.md
+web/          Next.js app (UI, crypto and WebRTC logic in lib/)
+signaling/    Cloudflare Worker + Durable Object
+.github/      CI and deploy workflows
 ```
-
-## Local Development
-
-### Prerequisites
-
-- Node.js 24
-- npm
-- Git
-- A modern browser with WebRTC and Web Crypto support
-
-### Clone
-
+ 
+## Run it locally
+ 
+You need Node.js 24 and a modern browser.
+ 
 ```bash
 git clone https://github.com/boradesanket13/dropsend.git
 cd dropsend
-```
-
-### Start signaling
-
-```bash
+ 
+# terminal 1: signaling server
 cd signaling
 npm ci
 npm run dev
-```
-
-### Start the web application
-
-In another terminal:
-
-```bash
+ 
+# terminal 2: web app
 cd web
 npm ci
 npm run dev
 ```
-
-For local signaling:
-
+ 
+In web/, set the signaling URL for local development:
+ 
 ```env
 NEXT_PUBLIC_SIGNALING_URL=ws://localhost:8787
 ```
-
-## Environment Variables
-
-Production:
-
-```env
-NEXT_PUBLIC_SIGNALING_URL=wss://dropsend-signaling.dropsend.workers.dev
+ 
+## Deployment
+ 
+Pushes to main deploy automatically through GitHub Actions. Changes in web/ deploy the app, and changes in signaling/ deploy the signaling Worker. Add these repository secrets:
+ 
 ```
-
-Local development:
-
-```env
-NEXT_PUBLIC_SIGNALING_URL=ws://localhost:8787
-```
-
-`NEXT_PUBLIC_SIGNALING_URL` is public browser configuration. Do not put secrets in `NEXT_PUBLIC_*` variables.
-
-Never commit API tokens, private keys, or local secret files.
-
-## Commands
-
-### Web
-
-```bash
-cd web
-
-npm run dev
-npm run typecheck
-npm run build
-npm run preview
-npm run deploy
-npm run upload
-npm run cf-typegen
-```
-
-### Signaling
-
-```bash
-cd signaling
-
-npm run dev
-npm run typecheck
-npm run deploy
-```
-
-## Production Deployment
-
-GitHub Actions deploys the application from `main`.
-
-Changes under `web/` trigger the web deployment workflow.
-
-Changes under `signaling/` trigger the signaling deployment workflow.
-
-Required GitHub Actions secrets:
-
-```text
 CLOUDFLARE_API_TOKEN
 CLOUDFLARE_ACCOUNT_ID
 ```
-
-The production frontend connects to:
-
-```text
-wss://dropsend-signaling.dropsend.workers.dev
-```
-
-## Security Model
-
-The browser generates the encryption secret. File chunks are encrypted before being sent through the WebRTC DataChannel.
-
-The signaling service handles connection negotiation data such as:
-
-- SDP offers and answers
-- ICE candidates
-- Room membership
-- Peer connection state
-
-The signaling service does not receive the file contents.
-
-DropSend also calculates a SHA-256 digest and verifies the received file before completing the transfer.
-
-## Connectivity
-
-DropSend currently relies on direct WebRTC connectivity without a TURN relay.
-
-Connectivity therefore depends on the network environments of both peers. Restrictive NATs, firewalls, VPNs, corporate networks, or client-isolation settings can prevent a direct connection.
-
-A failed connection does not necessarily indicate an encryption failure.
-
-## Browser Support
-
-DropSend targets modern browsers supporting:
-
-- WebRTC
-- Web Crypto
-- WebSocket
-- File APIs
-
-Native file-saving APIs vary by browser. Where browser capabilities differ, DropSend uses an appropriate fallback.
-
-## Design Principles
-
-1. Privacy first
-2. No unnecessary accounts
-3. No cloud file storage
-4. Direct peer-to-peer transfer whenever possible
-5. Encryption before transfer
-6. Integrity verification after transfer
-7. Minimal dependencies
-8. Progressive enhancement
-9. Accessible responsive UI
-10. Clear technical behavior without misleading security claims
-
-## Development Principles
-
-- Keep the transfer engine stable when changing the UI.
-- Prefer platform APIs over unnecessary dependencies.
-- Keep TypeScript strictly typed.
-- Avoid `any`.
-- Keep components focused.
-- Keep security-sensitive code small and explicit.
-- Validate data received from signaling and peers.
-- Preserve transfer integrity checks.
-- Test sender and receiver flows.
-- Respect reduced-motion preferences.
-- Never commit secrets or credentials.
-
+ 
+NEXT_PUBLIC_SIGNALING_URL is public, so never put secrets in NEXT_PUBLIC_* variables.
+ 
+## Limitations
+ 
+DropSend uses direct WebRTC without a TURN relay. If either person is behind a strict NAT, firewall, VPN or corporate network, the connection can fail..
+ 
 ## License
-
-- MIT License
+ 
+MIT
+ 
